@@ -189,7 +189,9 @@ export const EditExpenseDialog = ({ expense, open, onOpenChange, onEdit }: EditE
                     </Button>
                   </div>
                   {receipt.startsWith("data:image") && (
-                    <img src={receipt} alt="Receipt" className="w-full rounded-md border" />
+                    <div className="flex justify-center bg-muted/30 p-2 rounded-md border">
+                      <img src={receipt} alt="Receipt" className="h-24 w-auto object-contain rounded shadow-sm" />
+                    </div>
                   )}
                 </div>
               )}
