@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Expense, RecurringExpense, SavedLabel, MonthlySaving } from "@/types/expense";
+import { Expense, RecurringExpense, SavedLabel, MonthlySaving, Income } from "@/types/expense";
 import { account, databases, APPWRITE_CONFIG } from "@/integrations/appwrite/client";
 import { ID, Query, Models } from "appwrite";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ export const useExpenses = () => {
   const [monthlySalary, setMonthlySalary] = useState<number>(0);
   const [salaryRenewalDate, setSalaryRenewalDate] = useState<number>(1);
   const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
+  const [incomes, setIncomes] = useState<Income[]>([]);
   const [savedLabels, setSavedLabels] = useState<SavedLabel[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
@@ -81,6 +82,34 @@ export const useExpenses = () => {
       });
 
       setMonthlyHistory(mappedHistory);
+
+      // 3. Fetch Incomes
+      if (APPWRITE_CONFIG.INCOMES_COLLECTION_ID) {
+        try {
+          const incomeResponse = await databases.listDocuments(
+            APPWRITE_CONFIG.DATABASE_ID,
+            APPWRITE_CONFIG.INCOMES_COLLECTION_ID,
+            [
+              Query.equal("userId", uid),
+              Query.orderDesc("dateReceived") // Updated to match DB column
+            ]
+          );
+          const mappedIncomes: Income[] = incomeResponse.documents.map((doc: Models.Document) => {
+            // Map DB columns (source, dateReceived) to App types (description, date)
+            const d = doc as unknown as Models.Document & { source: string; amount: number; dateReceived: string };
+            return {
+              id: doc.$id,
+              description: d.source || "Income", // Map source -> description
+              amount: Number(d.amount),
+              date: d.dateReceived || doc.$createdAt, // Map dateReceived -> date
+              createdAt: doc.$createdAt
+            };
+          });
+          setIncomes(mappedIncomes);
+        } catch (e) {
+          console.warn("Failed to fetch incomes (collection might not exist yet)", e);
+        }
+      }
 
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -189,17 +218,6 @@ export const useExpenses = () => {
 
         await fetchAllData(user.$id);
 
-        // After fetching data, check if we need to generate last month's report
-        // We need the expenses list for this, so we might need to rely on the fetchAllData result or pass it
-        // To be clean, let's call it after expenses are set? 
-        // Or better: fetchAllData populates expenses, but since setState is async, we can't use `expenses` immediately here.
-        // Solution: We re-fetch expenses inside checkAndGenerateMonthlySaving OR pass the raw list if we refactor fetchAllData to return it.
-        // Let's refactor fetchAllData slightly to return expenses. (Or just trust the next effect cycle? Next cycle is risky)
-        // Simplest: `checkAndGenerateMonthlySaving` fetches its own expenses if needed, OR we pass the list we just got.
-
-        // Waiting for `expenses` state might be tricky in useEffect. 
-        // Let's delay the check slightly or do it in a separate effect that depends on [expenses].
-
       } catch (error) {
         console.error("Auth Check Failed:", error);
         setUserId(null);
@@ -218,9 +236,7 @@ export const useExpenses = () => {
     if (userId && expenses.length > 0 && monthlySalary > 0 && userCreatedAt) {
       checkAndGenerateMonthlySaving(userId, monthlySalary, expenses, userCreatedAt);
     }
-    // Only run when expenses or salary changes (initial load), but debounce/guard it?
-    // Actually, `checkAndGenerateMonthlySaving` checks DB first, so it's idempotent and safe to run multiple times.
-  }, [userId, expenses.length, monthlySalary, userCreatedAt]); // Use length to avoid deep dependency issues
+  }, [userId, expenses.length, monthlySalary, userCreatedAt]);
 
 
   const saveSalary = async (salary: number, renewalDate?: number) => {
@@ -268,8 +284,6 @@ export const useExpenses = () => {
       if (expense.receiptName) {
         payload.receipt_name = expense.receiptName;
       }
-
-      // Console log removed for security
 
       const doc = await databases.createDocument(
         APPWRITE_CONFIG.DATABASE_ID,
@@ -451,6 +465,63 @@ export const useExpenses = () => {
     }
   };
 
+  const addIncome = async (income: Omit<Income, "id" | "createdAt">) => {
+    if (!userId) {
+      toast.error("You must be logged in");
+      return;
+    }
+    if (!APPWRITE_CONFIG.DATABASE_ID || !APPWRITE_CONFIG.INCOMES_COLLECTION_ID) {
+      toast.error("Incomes collection not configured");
+      return;
+    }
+
+    try {
+      const payload = {
+        userId: userId,
+        source: income.description,
+        amount: income.amount,
+        dateReceived: income.date,
+        incomeId: ID.unique(),
+      };
+      console.log("Adding Income Payload:", payload);
+
+      const doc = await databases.createDocument(
+        APPWRITE_CONFIG.DATABASE_ID,
+        APPWRITE_CONFIG.INCOMES_COLLECTION_ID,
+        ID.unique(),
+        payload
+      );
+
+      const newIncome: Income = {
+        id: doc.$id,
+        description: doc.source,
+        amount: Number(doc.amount),
+        date: doc.dateReceived,
+        createdAt: doc.$createdAt,
+      };
+      setIncomes([newIncome, ...incomes]);
+      toast.success("Income added successfully");
+    } catch (error) {
+      console.error("Error adding income", error);
+      toast.error("Failed to add income: " + (error instanceof Error ? error.message : "check permissions"));
+    }
+  };
+
+  const deleteIncome = async (id: string) => {
+    if (!userId || !APPWRITE_CONFIG.DATABASE_ID || !APPWRITE_CONFIG.INCOMES_COLLECTION_ID) return;
+    try {
+      await databases.deleteDocument(
+        APPWRITE_CONFIG.DATABASE_ID,
+        APPWRITE_CONFIG.INCOMES_COLLECTION_ID,
+        id
+      );
+      setIncomes(incomes.filter(i => i.id !== id));
+      toast.success("Income deleted");
+    } catch (error) {
+      toast.error("Failed to delete income");
+    }
+  };
+
   return {
     expenses,
     monthlySalary,
@@ -459,6 +530,7 @@ export const useExpenses = () => {
     savedLabels,
     userCreatedAt,
     monthlyHistory,
+    incomes,
     addExpense,
     deleteExpense,
     updateExpense,
@@ -469,6 +541,8 @@ export const useExpenses = () => {
     addSavedLabel,
     deleteSavedLabel,
     deleteMonthlySaving,
+    addIncome,
+    deleteIncome,
     isLoading,
   };
 };

@@ -65,4 +65,4 @@ The project is optimized for deployment on **Vercel**.
 Ensure you add the Environment Variables in your Vercel Project Settings.
 
 ---
-Made with ❤️ by Aryan Patel
+Made by Aryan Patel

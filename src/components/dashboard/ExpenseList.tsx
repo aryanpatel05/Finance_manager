@@ -248,11 +248,20 @@ export const ExpenseList = ({ expenses, onDelete, onEdit }: ExpenseListProps) =>
               {viewingReceipt?.receipt && (
                 <>
                   {viewingReceipt.receipt.startsWith("data:image") ? (
-                    <img
-                      src={viewingReceipt.receipt}
-                      alt="Receipt"
-                      className="w-full rounded-md border"
-                    />
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="bg-muted/30 w-full flex justify-center p-4 rounded-lg border">
+                        <img
+                          src={viewingReceipt.receipt}
+                          alt="Receipt"
+                          className="max-h-[70vh] w-auto object-contain rounded shadow-md"
+                        />
+                      </div>
+                      <Button asChild variant="outline" size="sm">
+                        <a href={viewingReceipt.receipt} download={viewingReceipt.receiptName || "receipt.png"}>
+                          Download Receipt
+                        </a>
+                      </Button>
+                    </div>
                   ) : viewingReceipt.receipt.startsWith("data:application/pdf") ? (
                     <div className="text-center p-8 border rounded-md">
                       <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />

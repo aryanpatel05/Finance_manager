@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -43,7 +42,6 @@ export const AddExpenseDialog = ({ onAdd }: AddExpenseDialogProps) => {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [receipt, setReceipt] = useState<string>("");
   const [receiptName, setReceiptName] = useState<string>("");
-  const [isExtractingData, setIsExtractingData] = useState(false);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -58,76 +56,7 @@ export const AddExpenseDialog = ({ onAdd }: AddExpenseDialogProps) => {
         const base64Image = reader.result as string;
         setReceipt(base64Image);
         setReceiptName(file.name);
-
-        if (file.type.startsWith('image/')) {
-          setIsExtractingData(true);
-          toast.info("Extracting data with Gemini 2.0 Flash...");
-
-          try {
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-            if (!apiKey || apiKey.includes("YOUR_GEMINI_API_KEY")) {
-              throw new Error("Please set VITE_GEMINI_API_KEY in your .env file");
-            }
-
-            // Direct REST API Call fallback
-            const base64Data = base64Image.split(',')[1];
-            // Use gemini-2.0-flash as it is confirmed to be available in the user's model list
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-            const response = await fetch(url, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                contents: [{
-                  parts: [
-                    { text: "Extract expense information from this receipt image. Return ONLY a VALID JSON object (no markdown, no backticks) with these exact fields: amount (number), date (YYYY-MM-DD format), description (merchant/store name). Be precise with the amount - extract the exact total. If you cannot find a field, use null." },
-                    {
-                      inline_data: {
-                        mime_type: file.type,
-                        data: base64Data
-                      }
-                    }
-                  ]
-                }]
-              })
-            });
-
-            if (!response.ok) {
-              const errorText = await response.text();
-              console.error("Gemini API Error:", errorText);
-              throw new Error(`Gemini API Failed: ${response.status} ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            console.log("Gemini Raw Response:", data);
-
-            // Parse nested response structure
-            const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-            if (!responseText) {
-              throw new Error("No text returned from Gemini API");
-            }
-
-            const cleanJson = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-            const extractedData = JSON.parse(cleanJson);
-
-            if (extractedData) {
-              if (extractedData.amount) setAmount(extractedData.amount.toString());
-              if (extractedData.date) setDate(extractedData.date);
-              if (extractedData.description) setDescription(extractedData.description);
-              toast.success(`Receipt extracted using Gemini REST API!`);
-            }
-          } catch (error) {
-            console.error('Error extracting receipt data:', error);
-            // Show exact error message to user (e.g., if API is disabled)
-            toast.error(error instanceof Error ? error.message : "Failed to extract receipt data");
-          } finally {
-            setIsExtractingData(false);
-          }
-        }
+        toast.success("Receipt attached!");
       };
       reader.readAsDataURL(file);
     }
@@ -165,15 +94,6 @@ export const AddExpenseDialog = ({ onAdd }: AddExpenseDialogProps) => {
     // Validation: Prevent adding expenses to past months
     const selectedDate = new Date(date);
     const now = new Date();
-    // Start of the current month (e.g., Dec 1, 2025)
-    // We check against the first day of the current month.
-    // However, users should likely be able to add expenses for TODAY and FUTURE days of this month (if applicable) 
-    // and PREVIOUS days of THIS month.
-    // But NOT previous months (e.g. November).
-
-    // Let's compare Year and Month.
-    // If selected Year < current Year -> Block
-    // If selected Year == current Year AND selected Month < current Month -> Block
 
     if (
       selectedDate.getFullYear() < now.getFullYear() ||
@@ -280,7 +200,6 @@ export const AddExpenseDialog = ({ onAdd }: AddExpenseDialogProps) => {
                     accept="image/*,.pdf"
                     onChange={handleFileChange}
                     className="cursor-pointer"
-                    disabled={isExtractingData}
                   />
                   <Upload className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                 </div>
@@ -293,21 +212,18 @@ export const AddExpenseDialog = ({ onAdd }: AddExpenseDialogProps) => {
                     size="icon"
                     onClick={handleRemoveReceipt}
                     className="h-6 w-6"
-                    disabled={isExtractingData}
                   >
                     <X className="h-3 w-3" />
                   </Button>
                 </div>
               )}
               <p className="text-xs text-muted-foreground">
-                {isExtractingData
-                  ? "Extracting data with Gemini AI..."
-                  : "Upload receipt image for auto-fill (max 5MB)"}
+                Upload receipt image (max 5MB)
               </p>
             </div>
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={isExtractingData || !amount || parseFloat(amount) <= 0}>{isExtractingData ? "Processing..." : "Save Expense"}</Button>
+            <Button type="submit" disabled={!amount || parseFloat(amount) <= 0}>Save Expense</Button>
           </DialogFooter>
         </form>
       </DialogContent>

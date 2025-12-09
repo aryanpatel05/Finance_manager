@@ -4,6 +4,8 @@ import { useExpenses } from "@/hooks/useExpenses";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { AddExpenseDialog } from "@/components/dashboard/AddExpenseDialog";
 import { AutoLabelDialog } from "@/components/dashboard/AutoLabelDialog";
+import { AddIncomeDialog } from "@/components/dashboard/AddIncomeDialog";
+import { IncomeList } from "@/components/dashboard/IncomeList";
 import { ExpenseList } from "@/components/dashboard/ExpenseList";
 import { ExpenseCharts } from "@/components/dashboard/ExpenseCharts";
 import { MonthlyReports } from "@/components/dashboard/MonthlyReports";
@@ -31,11 +33,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { format, startOfMonth, endOfMonth } from "date-fns";
+import { format } from "date-fns";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -47,14 +48,14 @@ const Index = () => {
     savedLabels,
     userCreatedAt,
     monthlyHistory,
+    incomes,
     deleteMonthlySaving,
     addExpense,
+    addIncome,
+    deleteIncome,
     deleteExpense,
     updateExpense,
     saveSalary,
-    addRecurringExpense,
-    updateRecurringExpense,
-    deleteRecurringExpense,
     addSavedLabel,
     deleteSavedLabel,
     isLoading,
@@ -96,14 +97,10 @@ const Index = () => {
     let monthStart, monthEnd;
 
     if (currentDay >= renewalDay) {
-      // Current cycle started this month on renewalDay
       monthStart = new Date(today.getFullYear(), today.getMonth(), renewalDay);
-      // Ends next month on renewalDay - 1
       monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, renewalDay - 1, 23, 59, 59, 999);
     } else {
-      // Current cycle started LAST month on renewalDay
       monthStart = new Date(today.getFullYear(), today.getMonth() - 1, renewalDay);
-      // Ends this month on renewalDay - 1
       monthEnd = new Date(today.getFullYear(), today.getMonth(), renewalDay - 1, 23, 59, 59, 999);
     }
 
@@ -112,6 +109,26 @@ const Index = () => {
       return expenseDate >= monthStart && expenseDate <= monthEnd;
     });
   }, [expenses, salaryRenewalDate]);
+
+  const currentMonthIncomes = useMemo(() => {
+    const today = new Date();
+    const currentDay = today.getDate();
+    const renewalDay = salaryRenewalDate || 1;
+    let monthStart, monthEnd;
+
+    if (currentDay >= renewalDay) {
+      monthStart = new Date(today.getFullYear(), today.getMonth(), renewalDay);
+      monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, renewalDay - 1, 23, 59, 59, 999);
+    } else {
+      monthStart = new Date(today.getFullYear(), today.getMonth() - 1, renewalDay);
+      monthEnd = new Date(today.getFullYear(), today.getMonth(), renewalDay - 1, 23, 59, 59, 999);
+    }
+
+    return incomes.filter((inc) => {
+      const d = new Date(inc.date);
+      return d >= monthStart && d <= monthEnd;
+    });
+  }, [incomes, salaryRenewalDate]);
 
   const totalRecurringExpenses = useMemo(
     () => recurringExpenses.reduce((sum, exp) => sum + exp.amount, 0),
@@ -128,8 +145,14 @@ const Index = () => {
     [expenses]
   );
 
-  const remainingBalance = monthlySalary - totalExpensesThisMonth;
-  const savingsRate = monthlySalary > 0 ? ((remainingBalance / monthlySalary) * 100) : 0;
+  const totalRandomIncome = useMemo(
+    () => currentMonthIncomes.reduce((sum, inc) => sum + inc.amount, 0),
+    [currentMonthIncomes]
+  );
+
+  const totalIncome = monthlySalary + totalRandomIncome;
+  const remainingBalance = totalIncome - totalExpensesThisMonth;
+  const savingsRate = totalIncome > 0 ? ((remainingBalance / totalIncome) * 100) : 0;
 
   const handleUpdateSalary = () => {
     const salary = parseFloat(newSalary);
@@ -197,6 +220,12 @@ const Index = () => {
                   });
                 }}
               />
+              <AddIncomeDialog
+                currentSalary={monthlySalary}
+                salaryRenewalDate={salaryRenewalDate}
+                onUpdateSalary={saveSalary}
+                onAddIncome={addIncome}
+              />
               <AddExpenseDialog onAdd={addExpense} />
 
               <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
@@ -258,17 +287,26 @@ const Index = () => {
 
         <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-4 sm:mb-6 lg:mb-8">
           <StatsCard
+            title="Total Income"
+            value={`₹${totalIncome.toLocaleString()}`}
+            icon={TrendingUp}
+            trend={{
+              value: totalRandomIncome > 0 ? `+₹${totalRandomIncome.toLocaleString()} extra` : "Base salary only",
+              isPositive: true
+            }}
+            className="text-green-600"
+          />
+          <StatsCard
             title="Monthly Salary"
             value={`₹${monthlySalary.toLocaleString()}`}
             icon={DollarSign}
-            onClick={() => setSettingsOpen(true)}
             trend={{
-              value: "Click to edit",
+              value: "Base Budget",
               isPositive: true
             }}
           />
           <StatsCard
-            title="This Month's Expenses"
+            title="Monthly Expense"
             value={`₹${totalExpensesThisMonth.toLocaleString()}`}
             icon={TrendingDown}
             trend={{
@@ -279,30 +317,22 @@ const Index = () => {
           <StatsCard
             title="Remaining Balance"
             value={`₹${remainingBalance.toLocaleString()}`}
-            icon={TrendingUp}
+            icon={Wallet}
             trend={{
               value: `${savingsRate.toFixed(1)}% saved`,
               isPositive: remainingBalance >= 0,
             }}
-            className={remainingBalance < 0 ? "border-destructive" : ""}
-          />
-          <StatsCard
-            title="Total Expenses"
-            value={`₹${totalExpensesAllTime.toLocaleString()}`}
-            icon={Wallet}
-            trend={{
-              value: `${expenses.length} total transactions`,
-              isPositive: false,
-            }}
+            className={remainingBalance < 0 ? "border-destructive text-destructive" : ""}
           />
         </div>
 
         <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-3">
           <div className="lg:col-span-2 space-y-4 sm:space-y-6">
             <ExpenseCharts expenses={expenses} />
-            <MonthlyReports expenses={expenses} monthlySalary={monthlySalary} recurringTotal={totalRecurringExpenses} />
+            <MonthlyReports expenses={expenses} monthlySalary={monthlySalary} recurringTotal={totalRecurringExpenses} incomes={incomes} />
           </div>
           <div>
+            <IncomeList incomes={currentMonthIncomes} onDelete={deleteIncome} />
             <ExpenseList expenses={expenses} onDelete={deleteExpense} onEdit={updateExpense} />
             <SavingsHistory
               expenses={expenses}

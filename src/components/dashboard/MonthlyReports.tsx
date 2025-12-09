@@ -1,8 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Expense } from "@/types/expense";
+import { Expense, Income } from "@/types/expense";
 import { useMemo, useState } from "react";
-import { format, startOfMonth, endOfMonth } from "date-fns";
+import { format } from "date-fns";
 import { Download, FileText, Eye } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -20,21 +20,30 @@ interface MonthlyReportsProps {
   expenses: Expense[];
   monthlySalary: number;
   recurringTotal: number;
+  incomes?: Income[];
 }
 
-export const MonthlyReports = ({ expenses, monthlySalary, recurringTotal }: MonthlyReportsProps) => {
+export const MonthlyReports = ({ expenses, monthlySalary, recurringTotal, incomes = [] }: MonthlyReportsProps) => {
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const monthlyData = useMemo(() => {
+    // 1. Group Expenses by Month
     const monthsMap = new Map<string, Expense[]>();
-
     expenses.forEach((expense) => {
       const monthKey = format(new Date(expense.date), "yyyy-MM");
       if (!monthsMap.has(monthKey)) {
         monthsMap.set(monthKey, []);
       }
       monthsMap.get(monthKey)!.push(expense);
+    });
+
+    // 2. Group Incomes by Month
+    const incomeMap = new Map<string, number>();
+    incomes.forEach((inc) => {
+      const monthKey = format(new Date(inc.date), "yyyy-MM");
+      const current = incomeMap.get(monthKey) || 0;
+      incomeMap.set(monthKey, current + inc.amount);
     });
 
     return Array.from(monthsMap.entries())
@@ -46,18 +55,23 @@ export const MonthlyReports = ({ expenses, monthlySalary, recurringTotal }: Mont
           categoryBreakdown[exp.category] = (categoryBreakdown[exp.category] || 0) + exp.amount;
         });
 
+        const randomIncomeForMonth = incomeMap.get(month) || 0;
+        const totalIncome = monthlySalary + randomIncomeForMonth;
+
         return {
           month,
           monthDisplay: format(new Date(month), "MMMM yyyy"),
           expenses,
           totalExpenses,
-          balance: monthlySalary - totalExpenses,
+          randomIncomeForMonth,
+          totalIncome,
+          balance: totalIncome - totalExpenses,
           categoryBreakdown,
           transactionCount: expenses.length,
         };
       })
       .sort((a, b) => b.month.localeCompare(a.month));
-  }, [expenses, monthlySalary, recurringTotal]);
+  }, [expenses, monthlySalary, recurringTotal, incomes]);
 
   const toggleMonth = (month: string) => {
     setSelectedMonths((prev) =>
@@ -82,13 +96,17 @@ export const MonthlyReports = ({ expenses, monthlySalary, recurringTotal }: Mont
       doc.setFontSize(10);
       doc.setTextColor(100, 100, 100);
       doc.text(`Generated on: ${format(new Date(), "PPP")}`, 14, 28);
-      // Fix: Use "Rs." instead of "₹" to avoid PDF font artifacts
-      doc.text(`Monthly Salary: Rs. ${monthlySalary.toLocaleString()}`, 14, 33);
+
+      doc.text(`Total Income: Rs. ${monthData.totalIncome.toLocaleString()}`, 14, 33);
+      if (monthData.randomIncomeForMonth > 0) {
+        doc.setFontSize(8);
+        doc.text(`(Salary: Rs. ${monthlySalary.toLocaleString()} + Other: Rs. ${monthData.randomIncomeForMonth.toLocaleString()})`, 14, 37);
+      }
 
       doc.setDrawColor(230, 230, 230);
-      doc.line(14, 38, 196, 38);
+      doc.line(14, 42, 196, 42);
 
-      let yPos = 45;
+      let yPos = 50;
 
       // -- MONTH TITLE --
       doc.setFontSize(16);
@@ -148,7 +166,7 @@ export const MonthlyReports = ({ expenses, monthlySalary, recurringTotal }: Mont
       doc.setFontSize(12);
       doc.setTextColor(37, 99, 235); // blue-600
       doc.setFont("helvetica", "bold");
-      const rate = ((monthData.balance / monthlySalary) * 100).toFixed(1);
+      const rate = monthData.totalIncome > 0 ? ((monthData.balance / monthData.totalIncome) * 100).toFixed(1) : "0.0";
       doc.text(`${rate}%`, xPos + 5, yPos + 18);
 
       yPos += 35;
@@ -210,6 +228,66 @@ export const MonthlyReports = ({ expenses, monthlySalary, recurringTotal }: Mont
         },
         margin: { left: 14, right: 14 }
       });
+
+      // -- RECEIPT IMAGES APPENDIX --
+      // @ts-ignore
+      yPos = doc.lastAutoTable.finalY + 15;
+
+      const expensesWithReceipts = monthData.expenses.filter(e => e.receipt && e.receipt.startsWith('data:image'));
+
+      if (expensesWithReceipts.length > 0) {
+        if (yPos > 250) {
+          doc.addPage();
+          yPos = 20;
+        }
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(33, 33, 33);
+        doc.text("Attached Receipts", 14, yPos);
+        yPos += 10;
+
+        expensesWithReceipts.forEach((exp, i) => {
+          if (yPos > 200) {
+            doc.addPage();
+            yPos = 20;
+          }
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.setTextColor(50, 50, 50);
+          const label = `Receipt for: ${exp.description || exp.category} (${format(new Date(exp.date), "MMM dd")}) - Rs. ${exp.amount.toLocaleString()}`;
+          doc.text(label, 14, yPos);
+          yPos += 5;
+
+          try {
+            // Add image. Format: JPEG/PNG. 
+            // We fit it into a box of max width 100, max height 80
+            // Assuming base64 is clean
+            const imgProps = doc.getImageProperties(exp.receipt!);
+            const maxWidth = 100;
+            const maxHeight = 80;
+            const ratio = imgProps.width / imgProps.height;
+
+            let w = maxWidth;
+            let h = w / ratio;
+
+            if (h > maxHeight) {
+              h = maxHeight;
+              w = h * ratio;
+            }
+
+            doc.addImage(exp.receipt!, 'JPEG', 14, yPos, w, h);
+            yPos += h + 15; // spacing after image
+          } catch (err) {
+            console.error("Failed to add image to PDF", err);
+            doc.setFont("helvetica", "italic");
+            doc.setTextColor(150, 0, 0);
+            doc.text("[Image Error - Could not render]", 14, yPos + 5);
+            yPos += 15;
+          }
+        });
+      }
     });
 
     const filename = months.length === 1
@@ -245,7 +323,6 @@ export const MonthlyReports = ({ expenses, monthlySalary, recurringTotal }: Mont
                     <h1 className="text-3xl font-bold text-gray-900">Expense Report</h1>
                     <div className="mt-4 text-sm text-gray-600">
                       <p>Generated on: {format(new Date(), "PPP")}</p>
-                      <p>Monthly Salary: ₹{monthlySalary.toLocaleString()}</p>
                     </div>
                   </div>
 
@@ -255,7 +332,13 @@ export const MonthlyReports = ({ expenses, monthlySalary, recurringTotal }: Mont
                     .map((monthData) => (
                       <div key={monthData.month} className="mb-12 p-6 border border-gray-100 rounded-lg">
                         <div className="flex justify-between items-center mb-6">
-                          <h2 className="text-xl font-semibold text-gray-800">{monthData.monthDisplay}</h2>
+                          <div>
+                            <h2 className="text-xl font-semibold text-gray-800">{monthData.monthDisplay}</h2>
+                            <p className="text-sm text-gray-500 mt-1">
+                              Income: ₹{monthData.totalIncome.toLocaleString()}
+                              {monthData.randomIncomeForMonth > 0 && <span className="text-xs ml-1">(+₹{monthData.randomIncomeForMonth.toLocaleString()} extra)</span>}
+                            </p>
+                          </div>
                           <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-sm">Official Statement</span>
                         </div>
 
@@ -273,7 +356,7 @@ export const MonthlyReports = ({ expenses, monthlySalary, recurringTotal }: Mont
                           <div className="p-4 bg-gray-50 rounded-lg">
                             <p className="text-gray-500 mb-1">Savings Rate</p>
                             <p className="text-lg font-semibold text-blue-600">
-                              {((monthData.balance / monthlySalary) * 100).toFixed(1)}%
+                              {monthData.totalIncome > 0 ? ((monthData.balance / monthData.totalIncome) * 100).toFixed(1) : "0.0"}%
                             </p>
                           </div>
                         </div>
@@ -302,7 +385,7 @@ export const MonthlyReports = ({ expenses, monthlySalary, recurringTotal }: Mont
 
                         <div>
                           <h3 className="text-lg font-medium mb-4 text-gray-800">Transaction Details</h3>
-                          <div className="w-full">
+                          <div className="w-full mb-8">
                             <div className="bg-blue-500 text-white font-medium p-2 text-sm rounded-t-lg">
                               <div className="grid grid-cols-12 gap-2">
                                 <span className="col-span-3">Date</span>
@@ -323,6 +406,33 @@ export const MonthlyReports = ({ expenses, monthlySalary, recurringTotal }: Mont
                             </div>
                           </div>
                         </div>
+
+                        {/* Receipts Appendix Preview */}
+                        {monthData.expenses.some(e => e.receipt && e.receipt.startsWith('data:image')) && (
+                          <div className="mt-8 pt-8 border-t border-dashed">
+                            <h3 className="text-lg font-medium mb-4 text-gray-800">Attached Receipts</h3>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                              {monthData.expenses
+                                .filter(e => e.receipt && e.receipt.startsWith('data:image'))
+                                .map((exp, i) => (
+                                  <div key={i} className="flex flex-col gap-2 p-3 border rounded-lg bg-gray-50">
+                                    <div className="aspect-[4/3] relative rounded-md overflow-hidden bg-white border">
+                                      <img
+                                        src={exp.receipt}
+                                        alt="Receipt"
+                                        className="w-full h-full object-contain p-1"
+                                      />
+                                    </div>
+                                    <div className="text-xs text-gray-600">
+                                      <p className="font-semibold truncate">{exp.description || exp.category}</p>
+                                      <p className="text-gray-500">{format(new Date(exp.date), "MMM dd")} • ₹{exp.amount.toLocaleString()}</p>
+                                    </div>
+                                  </div>
+                                ))
+                              }
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
 
@@ -392,7 +502,7 @@ export const MonthlyReports = ({ expenses, monthlySalary, recurringTotal }: Mont
                   <div>
                     <p className="text-muted-foreground">Savings Rate</p>
                     <p className="font-semibold text-accent">
-                      {((data.balance / monthlySalary) * 100).toFixed(1)}%
+                      {data.totalIncome > 0 ? ((data.balance / data.totalIncome) * 100).toFixed(1) : "0.0"}%
                     </p>
                   </div>
                 </div>
