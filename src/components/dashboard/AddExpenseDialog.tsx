@@ -179,17 +179,15 @@ export const AddExpenseDialog = ({ onAdd }: AddExpenseDialogProps) => {
                 required
               />
             </div>
-            {category === "Other" && (
-              <div className="grid gap-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  placeholder="What was this expense for?"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </div>
-            )}
+            <div className="grid gap-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                placeholder="What was this expense for?"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
             <div className="grid gap-2">
               <Label htmlFor="receipt">Receipt (Optional)</Label>
               {!receipt ? (

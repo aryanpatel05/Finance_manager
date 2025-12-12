@@ -31,8 +31,8 @@ interface EditExpenseDialogProps {
     category: string;
     description: string;
     date: string;
-    receipt?: string;
-    receiptName?: string;
+    receipt?: string | null;
+    receiptName?: string | null;
   }) => void;
 }
 
@@ -93,8 +93,8 @@ export const EditExpenseDialog = ({ expense, open, onOpenChange, onEdit }: EditE
       category,
       description,
       date,
-      receipt: receipt || undefined,
-      receiptName: receiptName || undefined,
+      receipt: receipt === "" ? null : receipt,
+      receiptName: receiptName === "" ? null : receiptName,
     });
 
     onOpenChange(false);
@@ -149,17 +149,15 @@ export const EditExpenseDialog = ({ expense, open, onOpenChange, onEdit }: EditE
                 required
               />
             </div>
-            {category === "Other" && (
-              <div className="grid gap-2">
-                <Label htmlFor="edit-description">Description</Label>
-                <Textarea
-                  id="edit-description"
-                  placeholder="What was this expense for?"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </div>
-            )}
+            <div className="grid gap-2">
+              <Label htmlFor="edit-description">Description</Label>
+              <Textarea
+                id="edit-description"
+                placeholder="What was this expense for?"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
             <div className="grid gap-2">
               <Label htmlFor="edit-receipt">Receipt (Optional)</Label>
               {!receipt ? (

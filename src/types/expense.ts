@@ -5,8 +5,8 @@ export interface Expense {
   description: string;
   date: string;
   createdAt: string;
-  receipt?: string;
-  receiptName?: string;
+  receipt?: string | null;
+  receiptName?: string | null;
 }
 
 export interface Income {

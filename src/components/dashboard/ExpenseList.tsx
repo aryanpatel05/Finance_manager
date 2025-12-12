@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Expense, EXPENSE_CATEGORIES } from "@/types/expense";
 import { format, isWithinInterval, parseISO } from "date-fns";
 import { EditExpenseDialog } from "./EditExpenseDialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
 
 interface ExpenseListProps {
   expenses: Expense[];
@@ -18,8 +18,8 @@ interface ExpenseListProps {
     category: string;
     description: string;
     date: string;
-    receipt?: string;
-    receiptName?: string;
+    receipt?: string | null;
+    receiptName?: string | null;
   }) => void;
 }
 
@@ -170,7 +170,7 @@ export const ExpenseList = ({ expenses, onDelete, onEdit }: ExpenseListProps) =>
             No expenses recorded yet. Add your first expense to get started!
           </p>
         ) : (
-          <ScrollArea className="max-h-[320px] pr-4">
+          <div className="max-h-[320px] overflow-y-auto pr-2">
             <div className="space-y-3">
               {sortedExpenses.map((expense) => (
                 <div
@@ -231,7 +231,7 @@ export const ExpenseList = ({ expenses, onDelete, onEdit }: ExpenseListProps) =>
                 </div>
               ))}
             </div>
-          </ScrollArea>
+          </div>
         )}
         <EditExpenseDialog
           expense={editingExpense}

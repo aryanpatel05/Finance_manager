@@ -325,7 +325,7 @@ export const useExpenses = () => {
     try {
       const updateData: Record<string, unknown> = { ...updates };
       // Map frontend fields to DB fields if names differ
-      if (updateData.receiptName) {
+      if (updateData.receiptName !== undefined) {
         updateData.receipt_name = updateData.receiptName;
         delete updateData.receiptName;
       }
